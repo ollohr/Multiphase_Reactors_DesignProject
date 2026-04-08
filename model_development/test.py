@@ -37,7 +37,10 @@ mu= 1.54e-5                             # Dynamic viscosity of gas           [Pa
 rho_s = 7.794e3                   #Solid particle density                    [kg/m3]
 d_p = 100e-6                     #Particle diameter                         [m]
 phi_s= 1                    #Sphericity of catalyst                     [-]                     #actually idk if this is ok to assume, it was done earlier but check if this is ok
-rho_cat_bed = (1-epsilon_c)*rho_s
+# rho_cat_bed = (1-epsilon_c)*rho_s
+Wcat_per_V = 100.0          # kg_cat / m3_reactor, temporary design value
+A_ht_total = 4958.5         # m2, from your report
+a_ht = A_ht_total / V_fin   # m2/m3, temporary since V_fin is still provisional
 
 #           Parameters from the assignment
 a0 = 8.88522e-3                # Reaction Rate Coefficient                  [mol /(s kg_cat bar2)]
@@ -81,7 +84,7 @@ def reactor(V:(float),vars:float, params:np.ndarray, stoi_mat:np.ndarray)->np.nd
     F = vars[:-1]
     T = vars[-1]
 
-    Ea, R, DbH, dHrxn, U, Tc, a0, b0, p, rho_cat_bed, F0, D_r= params
+    Ea, R, DbH, dHrxn, U, Tc, a0, b0, p, Wcat_per_V, F0, a_ht = params
 
     # mass balance 
     FT = F.sum()
@@ -92,7 +95,7 @@ def reactor(V:(float),vars:float, params:np.ndarray, stoi_mat:np.ndarray)->np.nd
     beta = b0 * np.exp((DbH/R)*(1/493.15 - 1/T))
 
     r_mass = (3*alpha*p_CO*p_H2)/(1 + beta * p_CO)**2        # taking activity of catalyst to be 3
-    r_vol = r_mass*rho_cat_bed
+    r_vol = r_mass* Wcat_per_V
 
     dFdV = stoi_mat * r_vol
 
@@ -100,7 +103,7 @@ def reactor(V:(float),vars:float, params:np.ndarray, stoi_mat:np.ndarray)->np.nd
     Cp_flow = F@Cp
     # dTdV = (dHrxn * dFdV + U * (Tc - T))/(Cp_flow)
     q_rxn = (-dHrxn) * r_vol
-    q_cool = (4*U/D_r)* (Tc - T)
+    q_cool = U * a_ht* (Tc - T)
     dTdV = (q_rxn + q_cool) / Cp_flow                   
     
     return np.hstack((dFdV, dTdV))
@@ -110,7 +113,7 @@ V_span = [0, V_fin]                 # decide on a final volume
 V_eval = np.linspace(0,V_span[-1], 100001)
 
 vars = np.append(F0, T0)
-params  = [Ea, R, DbH, dHrxn, U, Tc, a0, b0, p, rho_cat_bed, F0, D_r]
+params  = [Ea, R, DbH, dHrxn, U, Tc, a0, b0, p, Wcat_per_V, F0, a_ht]
 sol = solve_ivp(reactor, V_span, vars, method = "RK45", t_eval = V_eval, args= (params, stoi_mat))
 
 
