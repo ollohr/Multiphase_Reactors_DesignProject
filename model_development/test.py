@@ -151,3 +151,14 @@ plt.show()
 
 
 
+######## Volume at 80% conversion
+X_target = 0.80
+
+# choose which conversion to use
+X = X_CO   # or X_H2
+
+if np.max(X) < X_target:
+    print(f"80% conversion is not reached within V = {V_fin} m^3")
+else:
+    V_80 = np.interp(X_target, X, sol.t)
+    print(f"Reactor volume at 80% conversion = {V_80:.4f} m^3")
