@@ -29,7 +29,7 @@ epsilon_c  = 0.55                #Bed voidage at u_c                         [-]
 
 #           Gas properties
 rho_g = 1.94                            #Gas density                              [kg/m3]
-mu= 1.54e-4                             # Dynamic viscosity of gas           [Pa*s]
+mu= 1.54e-5                             # Dynamic viscosity of gas           [Pa*s]
 
 
 #           Catalyst properties
@@ -55,8 +55,11 @@ FT = F0.sum()           # total molar flow rate
 p = 20*1.01325                   # pressure for kinetics (units) [bar]
 pa= p * 1e5                   # pressure [Pa]
 T0 = 340 + 273.15             # temperature [K]
+Tc = 250 + 273.15             # cooling water temperature [K]
+U = 400                       # heat transfer coefficient [J/(m2 s K)]
+dHrxn = -170e3                # enthalpy of reaction [J/mol]
 
-Cp = np.array([ ])   # [H2, CO, HC, H2O]           # write these in the report later !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+Cp = np.array([29.0, 30.0, 200.0, 35.0])   # [H2, CO, HC, H2O] in [J/(mol K)]           # (make sure they are correct first) write these in the report later !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 stoi_mat = np.array([-2.0,-1.0,1.0,1.0])                            # [H2,CO, HC, H2O] 
 
 
@@ -69,7 +72,7 @@ def reactor(V:(float),vars:float, params:np.ndarray, stoi_mat:np.ndarray)->np.nd
     Args: 
         V                    (float): volume of the reactor
         vars                 (float): vector of variables (flow rates and temperature)  
-        params               (np.ndarray): vector of parameters (Ea, Ru, DbH, a0, b0, P)
+        params               (np.ndarray): vector of parameters (Ea, R, DbH, a0, b0, P)
         stoi_mat             (np.ndarray): stoichiometric matrix of the reaction
     
     Returns: 
@@ -78,35 +81,46 @@ def reactor(V:(float),vars:float, params:np.ndarray, stoi_mat:np.ndarray)->np.nd
     F = vars[:-1]
     T = vars[-1]
 
-    Ea, Ru, DbH, dHrxn, U, Tc, a0, b0, p, rho_cat_bed, F0 = params
+    Ea, R, DbH, dHrxn, U, Tc, a0, b0, p, rho_cat_bed, F0 = params
 
     # mass balance 
     FT = F.sum()
     p_CO = F[1]/FT * p 
     p_H2 = F[0]/FT * p
 
-    alpha = a0 * np.exp((Ea/Ru)*(1/493.15 - 1/T))
-    beta = b0 * np.exp((DbH/Ru)*(1/493.15 - 1/T))
+    alpha = a0 * np.exp((Ea/R)*(1/493.15 - 1/T))
+    beta = b0 * np.exp((DbH/R)*(1/493.15 - 1/T))
 
     r_mass = (3*alpha*p_CO*p_H2)/(1 + beta * p_CO)**2        # taking activity of catalyst to be 3
     r_vol = r_mass*rho_cat_bed
 
-    dcdV = stoi_mat * r_vol
+    dFdV = stoi_mat * r_vol
 
     # energy balance 
     Cp_flow = F@Cp
-    dTdV = (-dHrxn * dcdV + U * (Tc - T))/(Cp_flow)
+    # dTdV = (dHrxn * dFdV + U * (Tc - T))/(Cp_flow)
+    q_rxn = (-dHrxn) * r_vol
+    q_cool = U * (Tc - T)
+    dTdV = (q_rxn + q_cool) / Cp_flow
     
-    return dcdV
+    return np.hstack((dFdV, dTdV))
 
 ######## Integrating the ODE
 V_span = [0, V_fin]                 # decide on a final volume
 V_eval = np.linspace(0,V_span[-1], 100001)
 
-sol = solve_ivp(reactor, V_span,)
+vars = np.append(F0, T0)
+params  = [Ea, R, DbH, dHrxn, U, Tc, a0, b0, p, rho_cat_bed, F0]
+sol = solve_ivp(reactor, V_span, vars, method = "RK45", t_eval = V_eval, args= (params, stoi_mat))
+
 
 ######## Conversion calculation (unless this was already done prior)
 
 
-
+plt.plot(sol.t, sol.y[0], label = 'F_H2')
+plt.plot(sol.t, sol.y[1], label = 'F_CO')
+plt.plot(sol.t, sol.y[2], label = 'F_HC')
+plt.plot(sol.t, sol.y[3], label = 'F_H2O')
+plt.legend()
+plt.show()
 ######## Plotting 
