@@ -66,6 +66,7 @@ def dX_dV(V, X):
 
     F_CO = F_CO0 * (1 - X)
     F_H2 = F_H20 - 2 * F_CO0 * X
+
     F_HC = F_CO0 * X
     F_H2O = F_CO0 * X
 
@@ -79,9 +80,9 @@ def dX_dV(V, X):
 
     r_int = cat_F * a * pco * ph2 / (1 + b * pco)**2
     r = n_eff * r_int
-    rv = r * rho_cat_bed
+    # rv = r * rho_cat_bed
 
-    return [rv / F_CO0]
+    return [r / F_CO0]
 
 V_span = [0, 100]               
 V_eval = np.linspace(0, 100, 200)
