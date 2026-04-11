@@ -1,0 +1,300 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.integrate import solve_ivp, quad
+from scipy.optimize import root_scalar, brentq
+
+
+# -----------------------------
+# General constants
+# -----------------------------
+g = 9.81
+R = 8.3145  # J/(mol K)
+
+# -----------------------------
+# Reactor properties
+# -----------------------------
+V_fin = 392.6990816987  # m^3
+u_mf = 1.19e-1
+u_c = 0.87
+D_r = 6.0
+
+epsilon_mf = 0.625
+epsilon_c = 0.55
+
+# -----------------------------
+# Gas properties
+# -----------------------------
+rho_g = 1.94          # kg/m^3  (ideal gas at 20 atm, 340 C, M_mix = 0.00489 kg/mol)
+mu = 1.54e-5          # Pa·s
+
+# -----------------------------
+# Catalyst properties
+# -----------------------------
+rho_s = 7.794e3       # kg/m^3
+d_p = 100e-6          # m
+phi_s = 1.0
+
+Wcat_per_V = 100.0        # kg_cat / m^3_reactor  (bulk catalyst loading)
+A_ht_total = 4958.5       # m^2   (total heat-exchanger area in reactor)
+a_ht = A_ht_total / V_fin  # m^2 / m^3_reactor
+
+# -----------------------------
+# Kinetic parameters  (Yates & Satterfield / Maretto & Krishna)
+# -----------------------------
+a0 = 8.88522e-3       # mol s^-1 kgcat^-1 bar^-2  at T_ref = 493.15 K
+Ea = 3.737e4          # J/mol
+b0 = 2.226            # bar^-1  at T_ref = 493.15 K
+DbH = -6.837e3        # J/mol  (adsorption enthalpy, negative → exothermic adsorption)
+
+# -----------------------------
+# Feed conditions
+# -----------------------------
+F_CO0 = 1239.6                  # mol/s
+F_H20 = 8.0 * F_CO0             # mol/s  (H2 : CO = 8 : 1 per report)
+F_HC0 = 0.0
+F_H2O0 = 0.0
+
+F0 = np.array([F_H20, F_CO0, F_HC0, F_H2O0], dtype=float)
+# Order: [H2, CO, HC, H2O]
+
+p = 20 * 1.01325         # bar  (20 atm)
+T0 = 340 + 273.15        # K   (feed / operating temperature)
+Tc = 250 + 273.15        # K   (coolant temperature: saturated steam at 250 °C)
+U = 400.0                # W/(m^2 K)
+dHrxn = -170e3           # J/mol_CO  (exothermic)
+
+Cp = np.array([29.0, 30.0, 200.0, 35.0], dtype=float)  # J/(mol K): H2, CO, HC, H2O
+# Stoichiometry for the lumped FT reaction: 2 H2 + CO → (CH2) + H2O
+stoi_mat = np.array([-2.0, -1.0, 1.0, 1.0], dtype=float)
+
+
+# ============================================================
+# Kinetics
+# ============================================================
+
+def kinetics(F, T, p, a0, Ea, b0, DbH, R, Wcat_per_V):
+    """
+    Yates & Satterfield kinetics with activity factor F=3 (Guettel & Turek).
+
+    Returns
+    -------
+    r_mass : mol s^-1 kgcat^-1
+    r_vol  : mol s^-1 m^-3_reactor
+    """
+    FT = np.sum(F)
+    if FT <= 0:
+        return 0.0, 0.0
+
+    y_H2 = max(F[0], 0.0) / FT
+    y_CO = max(F[1], 0.0) / FT
+
+    p_H2 = y_H2 * p   # bar
+    p_CO = y_CO * p   # bar
+
+    # Temperature-dependent rate and adsorption coefficients
+    alpha = a0 * np.exp((Ea / R) * (1.0 / 493.15 - 1.0 / T))
+    beta  = b0 * np.exp((DbH / R) * (1.0 / 493.15 - 1.0 / T))
+
+    # Catalyst activity factor = 3 (accounts for improvements since 1991)
+    r_mass = 3.0 * alpha * p_CO * p_H2 / (1.0 + beta * p_CO) ** 2
+    r_vol  = r_mass * Wcat_per_V
+    return r_mass, r_vol
+
+
+# ============================================================
+# CSTR temperature solver  –  self-consistent with PFR mass balance
+# ============================================================
+
+def solve_reactor_temperature(T_guess, V_fin, F0, T0, Tc, U, A_ht_total,
+                               dHrxn, p, a0, Ea, b0, DbH, R, Wcat_per_V, Cp,
+                               stoi_mat, rtol=1e-6, atol=1e-9):
+    """
+    For a given uniform reactor temperature T (well-mixed solid phase / CSTR-like),
+    integrate the PFR mass balance and return the overall steady-state energy
+    balance residual:
+
+        res = sum(F_out_i * Cp_i - F_in_i * Cp_i)(T - T0)
+              - (-dHrxn) * integral_0^V r_vol dV
+              - U * A_ht_total * (Tc - T)
+
+    At steady state, res = 0.
+
+    Physics:
+      Gas phase   → plug-flow  → PFR ODE  dF_i/dV = stoi_i * r_vol(T)
+      Solid phase → well-mixed → uniform T throughout the bed
+
+    The overall energy balance (integrated form, kJ/s = kW):
+      Q_rxn  = (-dHrxn) * n_CO_converted           [heat generated]
+      Q_cool = U * A_ht_total * (T - Tc)            [heat removed to coolant]
+      Q_feed = sum(F_i * Cp_i) * (T - T0)           [sensible heat rise of feed]
+      Steady state: Q_rxn = Q_cool + Q_feed
+    """
+    def pfr_rhs(V, F):
+        _, r_vol = kinetics(F, T_guess, p, a0, Ea, b0, DbH, R, Wcat_per_V)
+        return stoi_mat * r_vol
+
+    sol = solve_ivp(pfr_rhs, [0.0, V_fin], F0,
+                    method="RK45", dense_output=False,
+                    rtol=rtol, atol=atol)
+
+    if not sol.success:
+        raise RuntimeError(f"PFR integration failed at T={T_guess:.2f} K: {sol.message}")
+
+    F_out = sol.y[:, -1]
+    F_out = np.maximum(F_out, 0.0)
+
+    # Heat generated by reaction [W]  =  mol_CO_converted * |dHrxn|
+    delta_F_CO = F0[1] - F_out[1]                    # mol/s  (positive = consumed)
+    Q_rxn      = (-dHrxn) * delta_F_CO               # W  (positive)
+
+    # Heat removed by coolant [W]
+    Q_cool = U * A_ht_total * (T_guess - Tc)          # W  (positive when T > Tc)
+
+    # Sensible enthalpy change of the gas stream [W]
+    #   sum_i F_in_i * Cp_i * T0  →  sum_i F_out_i * Cp_i * T
+    #   Net = sum_i (F_out_i * Cp_i) * T - sum_i (F_in_i * Cp_i) * T0
+    #   For this residual formulation (= 0 at steady state):
+    #     Q_rxn - Q_cool - Q_sensible = 0
+    Q_sensible = (np.dot(F_out, Cp) * T_guess
+                  - np.dot(F0,   Cp) * T0)            # W
+
+    residual = Q_rxn - Q_cool - Q_sensible
+    return residual, sol
+
+
+def find_reactor_temperature(V_fin, F0, T0, Tc, U, A_ht_total,
+                              dHrxn, p, a0, Ea, b0, DbH, R, Wcat_per_V, Cp,
+                              stoi_mat):
+    """
+    Find the unique self-consistent uniform reactor temperature by solving
+    the overall energy balance residual = 0.
+
+    Returns (T_reactor, pfr_solution_at_T_reactor)
+    """
+    def residual_only(T):
+        res, _ = solve_reactor_temperature(
+            T, V_fin, F0, T0, Tc, U, A_ht_total,
+            dHrxn, p, a0, Ea, b0, DbH, R, Wcat_per_V, Cp, stoi_mat)
+        return res
+
+    # Scan for a sign change in a physically reasonable range
+    T_grid = np.linspace(T0 - 50, T0 + 300, 100)   # search around feed temperature
+    f_grid = np.array([residual_only(T) for T in T_grid])
+
+    T_bracket = None
+    for i in range(len(T_grid) - 1):
+        if np.isnan(f_grid[i]) or np.isnan(f_grid[i + 1]):
+            continue
+        if f_grid[i] * f_grid[i + 1] < 0:
+            T_bracket = (T_grid[i], T_grid[i + 1])
+            break
+
+    if T_bracket is None:
+        # Fallback: return temperature with smallest residual
+        idx = np.argmin(np.abs(f_grid))
+        T_reactor = T_grid[idx]
+        print(f"Warning: no sign change found – using T = {T_reactor:.2f} K (min |residual|)")
+    else:
+        T_reactor = brentq(residual_only, T_bracket[0], T_bracket[1], xtol=0.01)
+
+    # Re-integrate at the converged temperature to get the full PFR solution
+    _, pfr_sol = solve_reactor_temperature(
+        T_reactor, V_fin, F0, T0, Tc, U, A_ht_total,
+        dHrxn, p, a0, Ea, b0, DbH, R, Wcat_per_V, Cp, stoi_mat)
+
+    return T_reactor, pfr_sol
+
+
+# ============================================================
+# Main integration at fine V_eval resolution
+# ============================================================
+
+print("Solving for self-consistent reactor temperature ...")
+T_reactor, _ = find_reactor_temperature(
+    V_fin, F0, T0, Tc, U, A_ht_total,
+    dHrxn, p, a0, Ea, b0, DbH, R, Wcat_per_V, Cp, stoi_mat)
+
+print(f"Converged reactor temperature: T = {T_reactor:.2f} K  ({T_reactor - 273.15:.1f} °C)")
+
+# Now integrate the PFR at this temperature with fine output resolution
+V_eval = np.linspace(0.0, V_fin, 2000)
+
+def pfr_rhs_final(V, F):
+    _, r_vol = kinetics(F, T_reactor, p, a0, Ea, b0, DbH, R, Wcat_per_V)
+    return stoi_mat * r_vol
+
+sol = solve_ivp(pfr_rhs_final, [0.0, V_fin], F0,
+                method="RK45", t_eval=V_eval,
+                rtol=1e-6, atol=1e-9)
+
+if not sol.success:
+    raise RuntimeError(sol.message)
+
+# Uniform temperature profile (well-mixed solid / CSTR assumption)
+T_profile = np.full(sol.t.size, T_reactor)
+
+# ============================================================
+# Conversion profiles
+# ============================================================
+X_H2 = (F0[0] - sol.y[0]) / F0[0]
+X_CO = (F0[1] - sol.y[1]) / F0[1]
+
+# ============================================================
+# Plotting
+# ============================================================
+fig, ax = plt.subplots(1, 2, figsize=(12, 5))
+
+ax[0].plot(sol.t, sol.y[0], label='F_H2')
+ax[0].plot(sol.t, sol.y[1], label='F_CO')
+ax[0].plot(sol.t, sol.y[2], label='F_HC')
+ax[0].plot(sol.t, sol.y[3], label='F_H2O')
+ax[0].set_xlim(0, V_fin)
+ax[0].legend()
+ax[0].set_ylabel('Molar flow rate [mol/s]')
+ax[0].set_xlabel('Reactor volume [m³]')
+ax[0].set_title('Species Profiles (PFR mass balance, uniform T)')
+
+ax[1].plot(sol.t, T_profile, label='Reactor temperature', color='r')
+ax[1].axhline(T0,  linestyle='--', color='b',  label=f'Feed temperature ({T0 - 273.15:.0f} °C)')
+ax[1].axhline(Tc,  linestyle='--', color='g',  label=f'Coolant temperature ({Tc - 273.15:.0f} °C)')
+ax[1].set_xlim(0, V_fin)
+ax[1].set_ylim(Tc - 20, T_reactor + 50)
+ax[1].legend()
+ax[1].set_ylabel('Temperature [K]')
+ax[1].set_xlabel('Reactor volume [m³]')
+ax[1].set_title('Temperature Profile (CSTR / well-mixed solid phase)')
+
+plt.tight_layout()
+plt.savefig('/mnt/user-data/outputs/reactor_profiles.png', dpi=150)
+plt.show()
+
+# ============================================================
+# Volume at 80% CO conversion
+# ============================================================
+X_target = 0.80
+X = X_CO
+
+print(f"\nFinal CO conversion at V = {V_fin:.3f} m³: X_CO = {X[-1]:.4f} ({X[-1]*100:.1f}%)")
+print(f"Final H2 conversion at V = {V_fin:.3f} m³: X_H2 = {X_H2[-1]:.4f} ({X_H2[-1]*100:.1f}%)")
+
+if np.max(X) < X_target:
+    print(f"\n80% CO conversion is not reached within V = {V_fin:.3f} m³")
+    print(f"  → Maximum conversion achieved: {np.max(X)*100:.1f}%")
+else:
+    V_80 = np.interp(X_target, X, sol.t)
+    print(f"\nReactor volume required for 80% CO conversion: V_80 = {V_80:.4f} m³")
+
+# ============================================================
+# Heat balance summary
+# ============================================================
+delta_F_CO = F0[1] - sol.y[1, -1]
+Q_rxn  = (-dHrxn) * delta_F_CO / 1e6          # MW
+Q_cool = U * A_ht_total * (T_reactor - Tc) / 1e6  # MW
+Q_sens = (np.dot(sol.y[:, -1], Cp) * T_reactor
+          - np.dot(F0, Cp) * T0) / 1e6            # MW
+
+print(f"\n--- Heat balance summary ---")
+print(f"  Heat of reaction generated : {Q_rxn:.2f} MW")
+print(f"  Heat removed by coolant    : {Q_cool:.2f} MW")
+print(f"  Sensible enthalpy rise     : {Q_sens:.2f} MW")
+print(f"  Closure (should ≈ 0)       : {Q_rxn - Q_cool - Q_sens:.4f} MW")

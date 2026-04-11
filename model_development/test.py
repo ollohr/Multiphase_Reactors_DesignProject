@@ -14,7 +14,7 @@ R = 8.3145                        # Gas constant [J/(K mol)]
 
 
 #           Reactor Properties
-V_fin = 20                            # temporary value for integration might need to be changed later [m3]
+V_fin = 392.6990816987                            # temporary value for integration might need to be changed later [m3]
 u_mf = 1.19e-1                          # minimum fluidization velocity [m/s]
 u_c = 0.87                              # turbulent fluidization velocity [m/s]
 D_r = 6.0
@@ -37,10 +37,12 @@ mu= 1.54e-5                             # Dynamic viscosity of gas           [Pa
 rho_s = 7.794e3                   #Solid particle density                    [kg/m3]
 d_p = 100e-6                     #Particle diameter                         [m]
 phi_s= 1                    #Sphericity of catalyst                     [-]                     #actually idk if this is ok to assume, it was done earlier but check if this is ok
-# rho_cat_bed = (1-epsilon_c)*rho_s
+
 Wcat_per_V = 100.0          # kg_cat / m3_reactor, temporary design value
 A_ht_total = 4958.5         # m2, from your report
-# a_ht = A_ht_total / 31.567*(50E-3/2)**2*np.pi   # m2/m3, temporary since V_fin is still provisional
+# a_ht = A_ht_total / (31.567*(50E-3/2)**2*np.pi)   # m2/m3, temporary since V_fin is still provisional
+a_ht = A_ht_total / (392.6990816987)   # m2/m3, temporary since V_fin is still provisional----> from sas paper ((pi*(5/2)**2)*20)
+
 
 #           Parameters from the assignment
 a0 = 8.88522e-3                # Reaction Rate Coefficient                  [mol /(s kg_cat bar2)]
@@ -58,6 +60,7 @@ F0 = np.array([F_H20, F_CO0, F_HC0, F_H2O0])
 FT = F0.sum()           # total molar flow rate
 p = 20*1.01325                   # pressure for kinetics (units) [bar]
 T0 = 340 + 273.15             # temperature [K]
+# T0 = 493.15             # temperature [K]
 Tc = 250 + 273.15             # cooling water temperature [K]
 U = 400                       # heat transfer coefficient [J/(m2 s K)]
 dHrxn = -170e3                # enthalpy of reaction [J/mol]
@@ -97,13 +100,12 @@ def reactor(V:(float),vars:float, params:np.ndarray, stoi_mat:np.ndarray)->np.nd
     r_mass = (3*alpha*p_CO*p_H2)/(1 + beta * p_CO)**2        # taking activity of catalyst to be 3
     r_vol = r_mass* Wcat_per_V
 
-    dFdV = stoi_mat * r_vol
+    dFdV = stoi_mat.T * r_vol.T
 
     # energy balance 
     Cp_flow = F@Cp
-    # dTdV = (dHrxn * dFdV + U * (Tc - T))/(Cp_flow)
     q_rxn = (-dHrxn) * r_vol
-    q_cool = U * A_ht_total* (Tc - T)
+    q_cool = U * A_ht_total * (Tc - T)
     dTdV = (q_rxn + q_cool) / Cp_flow                   
     
     return np.hstack((dFdV, dTdV))
@@ -113,7 +115,7 @@ V_span = [0, V_fin]                 # decide on a final volume
 V_eval = np.linspace(0,V_fin, 10001)
 
 vars = np.append(F0, T0)
-params  = [Ea, R, DbH, dHrxn, U, Tc, a0, b0, p, Wcat_per_V, F0, A_ht_total]
+params  = [Ea, R, DbH, dHrxn, U, Tc, a0, b0, p, Wcat_per_V, F0, a_ht]
 sol = solve_ivp(reactor, V_span, vars, method = "RK45", t_eval = V_eval, args= (params, stoi_mat))
 
 
