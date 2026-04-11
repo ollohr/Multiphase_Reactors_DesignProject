@@ -14,7 +14,7 @@ R = 8.3145                        # Gas constant [J/(K mol)]
 
 
 #           Reactor Properties
-V_fin = 100                             # temporary value for integration might need to be changed later [m3]
+V_fin = 20                            # temporary value for integration might need to be changed later [m3]
 u_mf = 1.19e-1                          # minimum fluidization velocity [m/s]
 u_c = 0.87                              # turbulent fluidization velocity [m/s]
 D_r = 6.0
@@ -40,7 +40,7 @@ phi_s= 1                    #Sphericity of catalyst                     [-]     
 # rho_cat_bed = (1-epsilon_c)*rho_s
 Wcat_per_V = 100.0          # kg_cat / m3_reactor, temporary design value
 A_ht_total = 4958.5         # m2, from your report
-a_ht = A_ht_total / V_fin   # m2/m3, temporary since V_fin is still provisional
+# a_ht = A_ht_total / 31.567*(50E-3/2)**2*np.pi   # m2/m3, temporary since V_fin is still provisional
 
 #           Parameters from the assignment
 a0 = 8.88522e-3                # Reaction Rate Coefficient                  [mol /(s kg_cat bar2)]
@@ -103,17 +103,17 @@ def reactor(V:(float),vars:float, params:np.ndarray, stoi_mat:np.ndarray)->np.nd
     Cp_flow = F@Cp
     # dTdV = (dHrxn * dFdV + U * (Tc - T))/(Cp_flow)
     q_rxn = (-dHrxn) * r_vol
-    q_cool = U * a_ht* (Tc - T)
+    q_cool = U * A_ht_total* (Tc - T)
     dTdV = (q_rxn + q_cool) / Cp_flow                   
     
     return np.hstack((dFdV, dTdV))
 
 ######## Integrating the ODE
 V_span = [0, V_fin]                 # decide on a final volume
-V_eval = np.linspace(0,V_span[-1], 100001)
+V_eval = np.linspace(0,V_fin, 10001)
 
 vars = np.append(F0, T0)
-params  = [Ea, R, DbH, dHrxn, U, Tc, a0, b0, p, Wcat_per_V, F0, a_ht]
+params  = [Ea, R, DbH, dHrxn, U, Tc, a0, b0, p, Wcat_per_V, F0, A_ht_total]
 sol = solve_ivp(reactor, V_span, vars, method = "RK45", t_eval = V_eval, args= (params, stoi_mat))
 
 
@@ -131,6 +131,7 @@ ax[0].plot(sol.t, sol.y[0], label='F_H2')
 ax[0].plot(sol.t, sol.y[1], label='F_CO')
 ax[0].plot(sol.t, sol.y[2], label='F_HC')
 ax[0].plot(sol.t, sol.y[3], label='F_H2O')
+ax[0].set_xlim(0,20)
 
 ax[0].legend()
 ax[0].set_ylabel('Molar flow rate [mol/s]')
@@ -144,7 +145,7 @@ ax[1].legend()
 ax[1].set_ylabel('Temperature [K]')
 ax[1].set_xlabel('Reactor volume [m³]')
 ax[1].set_title('Temperature Profile')
-
+ax[0].set_xlim(0,20)
 plt.tight_layout()
 plt.show()
 
