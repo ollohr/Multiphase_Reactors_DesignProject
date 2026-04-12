@@ -10,7 +10,7 @@ R = 8.3145  # J/(mol K)
 T0 = 340 + 273.15           # K
 p_bar = 20 * 1.01325        # bar
 p_pa = p_bar * 1e5          # Pa
-V_fin = 366                 # m
+V_fin = 431.3                 # m
 
 # Bed properties
 epsilon_c = 0.55
@@ -115,6 +115,7 @@ V_fullX = float(fun(0.99))
 print(f"Volume at full conversion is V = {V_fullX} [m3]")
 
 fig, ax = plt.subplots(1, 2, figsize=(12, 5))
+# ax.title('Isothermal Reactor')
 
 ax[0].plot(sol.t, C_CO, label="CO")
 ax[0].plot(sol.t, C_H2, label="H2")
@@ -131,6 +132,8 @@ ax[1].set_xlabel("Reactor volume [m^3]")
 ax[1].set_ylabel("Temperature [K]")
 ax[1].set_xlim(0,5)
 ax[1].grid(True)
+
+fig.suptitle('Isothermal Reactor', fontsize=20)
 plt.show()
 
 plt.figure()
