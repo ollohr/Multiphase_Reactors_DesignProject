@@ -14,7 +14,7 @@ R = 8.3145                        # Gas constant [J/(K mol)]
 
 
 #           Reactor Properties
-V_fin = 100                             # temporary value for integration might need to be changed later [m3]
+V_fin = 10                             # temporary value for integration might need to be changed later [m3]
 u_mf = 1.19e-1                          # minimum fluidization velocity [m/s]
 u_c = 0.87                              # turbulent fluidization velocity [m/s]
 

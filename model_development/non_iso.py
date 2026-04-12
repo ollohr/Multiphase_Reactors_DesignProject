@@ -37,7 +37,7 @@ Cp_H2O = 40.0
 
 # Inlet molar flows [mol/s]
 F_CO0 = 1239.6
-F_H20 = 8.0 * F_CO0
+F_H20 = 2.0 * F_CO0
 F_HC0 = 0.0
 F_H2O0 = 0.0
 
