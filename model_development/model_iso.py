@@ -17,7 +17,7 @@ epsilon_c = 0.55
 rho_s = 7.794e3             # kg/m^3
 rho_cat_bed = (1 - epsilon_c) * rho_s
 
-cat_F = 1.0
+cat_F = 3.0
 n_eff = 0.9
 
 # Kinetic parameters
@@ -39,7 +39,7 @@ Cp = np.array([Cp_CO, Cp_H2, Cp_HC, Cp_H2O])
 
 # Inlet molar flows [mol/s]
 F_CO0 = 1239.6
-F_H20 = 8.0 * F_CO0
+F_H20 = 2.5 * F_CO0
 F_HC0 = 0.0
 F_H2O0 = 0.0
 
@@ -88,7 +88,7 @@ def isothermal_reactor(V:float, var:float, params:np.ndarray)->np.ndarray:
     return dFdV
 
 V_span = [0, V_fin]
-V_eval = np.linspace(0, V_fin, 400)
+V_eval = np.linspace(0, V_fin, 4000)
 params = [a0, b0, Ea, DbH, R, p_bar, cat_F, rho_cat_bed, n_eff, Cp, stoi_mat, T0]
 vars = F0
 
@@ -123,13 +123,13 @@ ax[0].plot(sol.t, C_HC, label="HC")
 ax[0].set_xlabel("Reactor volume [m^3]")
 ax[0].set_ylabel("Concentration [mol/m^3]")
 ax[0].legend()
-ax[0].set_xlim(0,V_fullX)
+ax[0].set_xlim(0,5)
 ax[0].grid(True)
 
 ax[1].plot(sol.t, T)
 ax[1].set_xlabel("Reactor volume [m^3]")
 ax[1].set_ylabel("Temperature [K]")
-ax[1].set_xlim(0,V_fullX)
+ax[1].set_xlim(0,5)
 ax[1].grid(True)
 plt.show()
 
@@ -137,7 +137,7 @@ plt.figure()
 plt.plot(sol.t, X)
 plt.xlabel("Reactor volume [m^3]")
 plt.ylabel("CO conversion [-]")
-plt.xlim(0,V_fullX)
+plt.xlim(0,5)
 plt.grid(True)
 plt.show()
 
