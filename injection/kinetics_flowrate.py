@@ -57,9 +57,9 @@ ratio_opt  = ratios[idx_opt]
 r_opt      = r_per_feed[idx_opt]
 
 # Reference points for annotation
-ref_ratios = [2.0, 2.15, 3.0, ratio_opt, 8.0]
-ref_labels = ["2:1\n(stoich. long chain)", "2.15:1\n(industrial typical)",
-              "3:1\n(stoich. CH₄)", f"{ratio_opt:.2f}:1\n(optimum)", "8:1\n(current)"]
+ref_ratios = [2.0, 2.5, 3.0, ratio_opt, 8.0]
+ref_labels = ["2:1\n(stoich. long chain)", "2.5:1",
+              "3:1\n(stoich. CH₄)", f"{ratio_opt:.2f}:1\n(optimum)", "8:1"]
 ref_colors = ["steelblue", "seagreen", "darkorange", "crimson", "grey"]
 
 # --- Plot ---
